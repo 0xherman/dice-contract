@@ -22,6 +22,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		uint256 result;
 		uint256 amount;
 		address payable player;
+		bool paid;
 	}
 
 	event Received(address indexed sender, uint256 amount);
@@ -39,9 +40,10 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 
 	function rollDice(uint256 guess, uint256 seed) public payable returns (bytes32 requestId) {
 		require(LINK.balanceOf(address(this)) >= s_fee, "Not enough LINK to pay fee");
+		require(address(this).balance >= msg.value, "Cannot bid more than held in pool");
 
 		requestId = requestRandomness(s_keyHash, s_fee, seed);
-		games[requestId] = Game(requestId, seed, guess, GAME_NOT_STARTED, msg.value, msg.sender);
+		games[requestId] = Game(requestId, seed, guess, GAME_NOT_STARTED, msg.value, msg.sender, false);
 
 		emit DiceRolled(requestId);
 	}
@@ -64,8 +66,24 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
 		require(games[requestId].player == msg.sender, "You cannot claim the rewards for this game");
 		require(games[requestId].guess == games[requestId].result, "You did not win this game");
+		require(address(this).balance > games[requestId].bid.mul(2), "There are not enough winnings in the pool to pay out your claim. Either wait for pool to grow or withdraw your initial.");
 		if (games[requestId].guess == games[requestId].result) {
-			games[requestId].player.transfer(address(this).balance.div(2));
+			Game storage game = games[requestId];
+			game.paid = true;
+			games[requestId].player.transfer(games[requestId].bid.mul(2));
+		}
+	}
+
+	function withdrawClaim(bytes32 requestId) public virtual {
+		require(games[requestId].result != GAME_NOT_STARTED, "Dice not rolled");
+		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
+		require(games[requestId].player == msg.sender, "You cannot withdraw the bid for this game");
+		require(games[requestId].guess == games[requestId].result, "You did not win this game");
+		require(address(this).balance > games[requestId].bid, "There are not enough winnings in the pool to pay out your claim. Please wait for pool to grow.");
+		if (games[requestId].guess == games[requestId].result) {
+			Game storage game = games[requestId];
+			game.paid = true;
+			games[requestId].player.transfer(games[requestId].bid);
 		}
 	}
 
