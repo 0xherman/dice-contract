@@ -28,6 +28,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 	event Received(address indexed sender, uint256 amount);
 	event DiceRolled(bytes32 indexed requestId);
 	event DiceLanded(bytes32 indexed requestId, uint256 indexed result);
+	event WinnerPaid(address indexed sender, bytes32 indexed requestId, uint256 amount);
 
 	constructor(address vrfCoordinator, address link, bytes32 keyHash, uint256 fee) public VRFConsumerBase(vrfCoordinator, link) {
 		s_keyHash = keyHash;
@@ -38,7 +39,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		emit Received(msg.sender, msg.value);
 	}
 
-	function rollDice(uint256 guess, uint256 seed) public payable returns (bytes32 requestId) {
+	function rollDice(uint256 guess, uint256 seed) external payable returns (bytes32 requestId) {
 		require(LINK.balanceOf(address(this)) >= s_fee, "Not enough LINK to pay fee");
 		require(address(this).balance >= msg.value, "Cannot bid more than held in pool");
 
@@ -53,9 +54,11 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		Game storage game = games[requestId];
 		game.result = d6Value;
 		emit DiceLanded(requestId, d6Value);
+
+		claim(requestId);
 	}
 
-	function checkResults(bytes32 requestId) public view returns (bool) {
+	function checkResults(bytes32 requestId) external view returns (bool) {
 		require(games[requestId].result != GAME_NOT_STARTED, "Dice not rolled");
 		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
 		return games[requestId].result == games[requestId].guess;
@@ -71,10 +74,11 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 			Game storage game = games[requestId];
 			game.paid = true;
 			games[requestId].player.transfer(games[requestId].bid.mul(2));
+			emit WinnerPaid(games[requestId].player, requestId, games[requestId].bid.mul(2));
 		}
 	}
 
-	function withdrawClaim(bytes32 requestId) public virtual {
+	function withdrawClaim(bytes32 requestId) external virtual {
 		require(games[requestId].result != GAME_NOT_STARTED, "Dice not rolled");
 		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
 		require(games[requestId].player == msg.sender, "You cannot withdraw the bid for this game");
@@ -84,6 +88,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 			Game storage game = games[requestId];
 			game.paid = true;
 			games[requestId].player.transfer(games[requestId].bid);
+			emit WinnerPaid(games[requestId].player, requestId, games[requestId].bid);
 		}
 	}
 
