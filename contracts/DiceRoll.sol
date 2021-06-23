@@ -65,7 +65,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 	}
 
 	function maxBid() public view returns (uint256) {
-		uint256 _maxBid = address(this).balance.div(multiplier).div(10);
+		uint256 _maxBid = address(this).balance.mul(10).div(multiplier);
 		if (MAX_BID < _maxBid) {
 			return MAX_BID;
 		}
