@@ -12,6 +12,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 
 	bool public paused = true;
 	uint256 public minBid = 0;
+	uint256 public multiplier = 20;
 	uint256 private MAX_BID = 1 ether;
 
 	mapping(bytes32 => Game) public games;
@@ -23,6 +24,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		uint256 guess;
 		uint256 result;
 		uint256 bid;
+		uint256 multiplier;
 		address payable player;
 		bool paid;
 	}
@@ -57,8 +59,13 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		MAX_BID = _maxBid;
 	}
 
+	function setMultiplier(uint256 _multiplier) external onlyOwner {
+		require(_multiplier > 10, "Multiplier cannot be less than 1");
+		multiplier = _multiplier;
+	}
+
 	function maxBid() public view returns (uint256) {
-		uint256 _maxBid = address(this).balance.div(2);
+		uint256 _maxBid = address(this).balance.div(multiplier).div(10);
 		if (MAX_BID < _maxBid) {
 			return MAX_BID;
 		}
@@ -73,7 +80,7 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 		require(msg.value >= minBid, "Bid value too low for current min bid");
 
 		requestId = requestRandomness(s_keyHash, s_fee, seed);
-		games[requestId] = Game(requestId, seed, guess, ROLL_IN_PROGRESS, msg.value, msg.sender, false);
+		games[requestId] = Game(requestId, seed, guess, ROLL_IN_PROGRESS, msg.value, multiplier, msg.sender, false);
 		gamesByAddress[msg.sender].push(requestId);
 
 		emit DiceRolled(requestId, msg.value);
@@ -92,28 +99,28 @@ contract DiceRoll is VRFConsumerBase, Ownable {
 	}
 
 	function claim(bytes32 requestId) public virtual {
-		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
-		require(games[requestId].player == msg.sender, "You cannot claim the rewards for this game");
-		require(games[requestId].guess == games[requestId].result, "You did not win this game");
-		require(address(this).balance > games[requestId].bid.mul(2), "There are not enough winnings in the pool to pay out your claim. Either wait for pool to grow or withdraw your initial.");
-		if (games[requestId].guess == games[requestId].result) {
-			Game storage game = games[requestId];
+		Game storage game = games[requestId];
+		require(game.result != ROLL_IN_PROGRESS, "Roll in progress");
+		require(game.player == msg.sender, "You cannot claim the rewards for this game");
+		require(game.guess == game.result, "You did not win this game");
+		require(address(this).balance > game.bid.mul(game.multiplier).div(10), "There are not enough winnings in the pool to pay out your claim. Either wait for pool to grow or withdraw your initial.");
+		if (game.guess == game.result) {
 			game.paid = true;
-			games[requestId].player.transfer(games[requestId].bid.mul(2));
-			emit WinnerPaid(games[requestId].player, requestId, games[requestId].bid.mul(2));
+			game.player.transfer(game.bid.mul(game.multiplier).div(10));
+			emit WinnerPaid(game.player, requestId, game.bid.mul(game.multiplier).div(10));
 		}
 	}
 
 	function withdrawClaim(bytes32 requestId) external virtual {
-		require(games[requestId].result != ROLL_IN_PROGRESS, "Roll in progress");
-		require(games[requestId].player == msg.sender, "You cannot withdraw the bid for this game");
-		require(games[requestId].guess == games[requestId].result, "You did not win this game");
-		require(address(this).balance > games[requestId].bid, "There are not enough winnings in the pool to pay out your claim. Please wait for pool to grow.");
-		if (games[requestId].guess == games[requestId].result) {
-			Game storage game = games[requestId];
+		Game storage game = games[requestId];
+		require(game.result != ROLL_IN_PROGRESS, "Roll in progress");
+		require(game.player == msg.sender, "You cannot withdraw the bid for this game");
+		require(game.guess == game.result, "You did not win this game");
+		require(address(this).balance > game.bid, "There are not enough winnings in the pool to pay out your claim. Please wait for pool to grow.");
+		if (game.guess == game.result) {
 			game.paid = true;
-			games[requestId].player.transfer(games[requestId].bid);
-			emit WinnerPaid(games[requestId].player, requestId, games[requestId].bid);
+			game.player.transfer(game.bid);
+			emit WinnerPaid(game.player, requestId, game.bid);
 		}
 	}
 
